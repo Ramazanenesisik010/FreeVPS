@@ -1,0 +1,52 @@
+name: Create VPS
+
+on: 
+  repository_dispatch:
+    types: [create-vps]
+
+jobs:
+  start-vps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Create dirs
+        run:  mkdir -p links .backup
+
+      - name: Restore backup
+        run:  |
+          name="${{ github.event.client_payload.vps_name }}"
+          if [ "${{ github.event.client_payload.backup }}" == "true" ]; then
+            echo "Restoring backup..."
+            unzip ".backup/$name.zip" -d . || echo "No backup to restore"
+          fi
+
+      - name: Start tmate session
+        run: |
+          echo: "Launching tmate..."
+          sudo apt install -y tmate
+          tmate -S /tmp/tmate.sock new-session -d
+          tmate -S /tmp/tmate.sock wait tmate-ready
+          SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_shh}')
+          echo "$SSH" > "links/${{ github.event.client_payload.vps_name }}.txt"
+          echo "SSH Ready: $SHH"
+          sleep 60  # sybc
+          
+      - name: Save backup
+        run: |
+          name="${{ github.event.client_payload.vps_name }}"
+          zip -r ".backup/$name.zip" . -x ".git/*" ".github/*" ".backup/*" || true
+
+      - name: Push
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Updated SHH + backup for ${{ github.event.client_payload.vps_name }}"
+          file_pattern: 'links/*.txt .backup/*.zip'
+
+      - name: Keep session alive
+        run: |
+          echo: "Keeping session alive for 6 hours..."
+          sleep $((360 * 60))
